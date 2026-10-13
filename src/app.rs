@@ -4,8 +4,9 @@ use crate::key_codes::{egui_key_to_evdev, evdev_to_key_name};
 use crate::keyboard_interceptor::{InputDeviceInfo, InterceptorEvent, KeyboardInterceptor};
 use crate::mapping_manager::MappingManager;
 use egui::{
-    pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, RichText,
-    Sense, Stroke, StrokeKind, Ui, Visuals, Window,
+    pos2, vec2, Align, Align2, Color32, CornerRadius, CursorIcon, FontId, Layout, Margin,
+    PointerButton, Rect, ResizeDirection, RichText, Sense, Stroke, StrokeKind, Ui, ViewportCommand,
+    Visuals, Window,
 };
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
@@ -336,6 +337,11 @@ impl eframe::App for WasdApp {
         // Modais / Dialogs
         // ==========================================
         self.render_modals(&ctx);
+
+        // ==========================================
+        // Redimensionamento de bordas e cantos da janela (CSD)
+        // ==========================================
+        self.handle_window_edge_resize(&ctx, ui.max_rect());
     }
 }
 
@@ -520,19 +526,70 @@ impl WasdApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
-        // Arrastar e duplo-clique no titlebar (exceto na região dos botões)
+        // Arrastar e duplo-clique no titlebar (exceto na região dos botões e da borda superior)
         let buttons_width = 130.0;
         let is_over_buttons = ctx
             .input(|i| i.pointer.hover_pos())
             .map(|pos| pos.x >= titlebar_rect.right() - buttons_width)
             .unwrap_or(false);
 
-        if !is_over_buttons {
+        let is_on_resize_border = ctx
+            .input(|i| i.pointer.hover_pos())
+            .map(|pos| pos.y <= titlebar_rect.top() + 7.0 || pos.x <= titlebar_rect.left() + 7.0)
+            .unwrap_or(false);
+
+        if !is_over_buttons && !is_on_resize_border {
             if titlebar_response.drag_started() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
             if titlebar_response.double_clicked() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+            }
+        }
+    }
+
+    fn handle_window_edge_resize(&self, ctx: &egui::Context, rect: Rect) {
+        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        if is_maximized {
+            return;
+        }
+
+        let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else {
+            return;
+        };
+
+        let border_thickness = 8.0;
+        let corner_size = 18.0;
+
+        let on_left = pos.x <= rect.left() + border_thickness && pos.x >= rect.left() - 4.0;
+        let on_right = pos.x >= rect.right() - border_thickness && pos.x <= rect.right() + 4.0;
+        let on_top = pos.y <= rect.top() + border_thickness && pos.y >= rect.top() - 4.0;
+        let on_bottom = pos.y >= rect.bottom() - border_thickness && pos.y <= rect.bottom() + 4.0;
+
+        let dir_and_cursor = if on_top && on_left {
+            Some((ResizeDirection::NorthWest, CursorIcon::ResizeNorthWest))
+        } else if on_top && on_right {
+            Some((ResizeDirection::NorthEast, CursorIcon::ResizeNorthEast))
+        } else if on_bottom && on_left {
+            Some((ResizeDirection::SouthWest, CursorIcon::ResizeSouthWest))
+        } else if on_bottom && on_right {
+            Some((ResizeDirection::SouthEast, CursorIcon::ResizeSouthEast))
+        } else if on_top && pos.x > rect.left() + corner_size && pos.x < rect.right() - corner_size {
+            Some((ResizeDirection::North, CursorIcon::ResizeNorth))
+        } else if on_bottom && pos.x > rect.left() + corner_size && pos.x < rect.right() - corner_size {
+            Some((ResizeDirection::South, CursorIcon::ResizeSouth))
+        } else if on_left && pos.y > rect.top() + corner_size && pos.y < rect.bottom() - corner_size {
+            Some((ResizeDirection::West, CursorIcon::ResizeWest))
+        } else if on_right && pos.y > rect.top() + corner_size && pos.y < rect.bottom() - corner_size {
+            Some((ResizeDirection::East, CursorIcon::ResizeEast))
+        } else {
+            None
+        };
+
+        if let Some((direction, cursor)) = dir_and_cursor {
+            ctx.set_cursor_icon(cursor);
+            if ctx.input(|i| i.pointer.button_pressed(PointerButton::Primary)) {
+                ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction));
             }
         }
     }
