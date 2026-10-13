@@ -278,13 +278,16 @@ impl eframe::App for WasdApp {
         // ==========================================
         self.render_csd_titlebar(ui, &ctx);
 
-        // Moldura externa da janela para bordas nítidas
-        ui.painter().rect_stroke(
-            ui.max_rect(),
-            CornerRadius::ZERO,
-            Stroke::new(1.0, Color32::from_rgb(37, 51, 74)),
-            StrokeKind::Inside,
-        );
+        // Moldura externa da janela para bordas nítidas (quando não maximizado)
+        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        if !is_maximized {
+            ui.painter().rect_stroke(
+                ui.max_rect(),
+                CornerRadius::ZERO,
+                Stroke::new(1.0, Color32::from_rgb(37, 51, 74)),
+                StrokeKind::Inside,
+            );
+        }
 
         // Conteúdo com espaçamento e padding
         egui::Frame::new()
@@ -406,22 +409,37 @@ impl WasdApp {
         }
 
         // 3. LADO DIREITO: Botões de Controle (Fechar, Maximizar, Minimizar)
+        let btn_height = if is_maximized { titlebar_height } else { 26.0 };
+        let close_width = if is_maximized { 46.0 } else { 40.0 };
+        let other_btn_width = if is_maximized { 44.0 } else { 36.0 };
+        let btn_radius = if is_maximized {
+            CornerRadius::ZERO
+        } else {
+            CornerRadius::same(5)
+        };
+
         let mut right_ui = ui.new_child(
             egui::UiBuilder::default()
                 .max_rect(titlebar_rect)
-                .layout(Layout::right_to_left(Align::Center)),
+                .layout(Layout::right_to_left(if is_maximized {
+                    Align::Min
+                } else {
+                    Align::Center
+                })),
         );
 
-        right_ui.add_space(6.0);
+        if !is_maximized {
+            right_ui.add_space(6.0);
+        }
 
         // 1. Botão Fechar (Close) - Vector "X"
         let (close_rect, close_resp) =
-            right_ui.allocate_exact_size(vec2(40.0, 26.0), Sense::click());
+            right_ui.allocate_exact_size(vec2(close_width, btn_height), Sense::click());
 
         let close_color = if close_resp.hovered() {
             right_ui.painter().rect_filled(
                 close_rect,
-                CornerRadius::same(5),
+                btn_radius,
                 Color32::from_rgb(239, 68, 68),
             );
             Color32::WHITE
@@ -444,16 +462,18 @@ impl WasdApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
-        right_ui.add_space(2.0);
+        if !is_maximized {
+            right_ui.add_space(2.0);
+        }
 
         // 2. Botão Maximizar / Restaurar - Vector Box
         let (max_rect, max_resp) =
-            right_ui.allocate_exact_size(vec2(36.0, 26.0), Sense::click());
+            right_ui.allocate_exact_size(vec2(other_btn_width, btn_height), Sense::click());
 
         let max_color = if max_resp.hovered() {
             right_ui.painter().rect_filled(
                 max_rect,
-                CornerRadius::same(5),
+                btn_radius,
                 Color32::from_rgb(51, 65, 85),
             );
             Color32::WHITE
@@ -498,16 +518,18 @@ impl WasdApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
         }
 
-        right_ui.add_space(2.0);
+        if !is_maximized {
+            right_ui.add_space(2.0);
+        }
 
         // 3. Botão Minimizar - Vector Traço Horizontal
         let (min_rect, min_resp) =
-            right_ui.allocate_exact_size(vec2(36.0, 26.0), Sense::click());
+            right_ui.allocate_exact_size(vec2(other_btn_width, btn_height), Sense::click());
 
         let min_color = if min_resp.hovered() {
             right_ui.painter().rect_filled(
                 min_rect,
-                CornerRadius::same(5),
+                btn_radius,
                 Color32::from_rgb(51, 65, 85),
             );
             Color32::WHITE
@@ -527,7 +549,7 @@ impl WasdApp {
         }
 
         // Arrastar e duplo-clique no titlebar (exceto na região dos botões e da borda superior)
-        let buttons_width = 130.0;
+        let buttons_width = close_width + other_btn_width * 2.0 + (if is_maximized { 0.0 } else { 10.0 });
         let is_over_buttons = ctx
             .input(|i| i.pointer.hover_pos())
             .map(|pos| pos.x >= titlebar_rect.right() - buttons_width)
