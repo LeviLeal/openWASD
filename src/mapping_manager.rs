@@ -42,8 +42,21 @@ pub struct MappingManager {
 impl MappingManager {
     pub fn new() -> Self {
         let profiles_dir = match directories::BaseDirs::new() {
-            Some(base) => base.config_dir().join("wasd-anywhere").join("profiles"),
-            None => PathBuf::from(".config/wasd-anywhere/profiles"),
+            Some(base) => {
+                let new_dir = base.config_dir().join("openwasd").join("profiles");
+                let old_dir = base.config_dir().join("wasd-anywhere").join("profiles");
+                if !new_dir.exists() && old_dir.exists() {
+                    let _ = fs::create_dir_all(&new_dir);
+                    if let Ok(entries) = fs::read_dir(&old_dir) {
+                        for entry in entries.flatten() {
+                            let dest = new_dir.join(entry.file_name());
+                            let _ = fs::copy(entry.path(), dest);
+                        }
+                    }
+                }
+                new_dir
+            }
+            None => PathBuf::from(".config/openwasd/profiles"),
         };
 
         let _ = fs::create_dir_all(&profiles_dir);

@@ -115,28 +115,28 @@ pub fn get_all_gamepad_buttons() -> &'static [GamepadButtonInfo] {
         // D-Pad
         GamepadButtonInfo {
             id: VirtualGamepadButton::DpadUp,
-            name: "D-Pad Up",
+            name: "Up",
             category: "D-Pad",
             description: "Digital Direction Up",
             evdev_code: 544, // BTN_DPAD_UP
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::DpadDown,
-            name: "D-Pad Down",
+            name: "Down",
             category: "D-Pad",
             description: "Digital Direction Down",
             evdev_code: 545, // BTN_DPAD_DOWN
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::DpadLeft,
-            name: "D-Pad Left",
+            name: "Left",
             category: "D-Pad",
             description: "Digital Direction Left",
             evdev_code: 546, // BTN_DPAD_LEFT
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::DpadRight,
-            name: "D-Pad Right",
+            name: "Right",
             category: "D-Pad",
             description: "Digital Direction Right",
             evdev_code: 547, // BTN_DPAD_RIGHT
@@ -145,36 +145,36 @@ pub fn get_all_gamepad_buttons() -> &'static [GamepadButtonInfo] {
         // Left Stick (Movement)
         GamepadButtonInfo {
             id: VirtualGamepadButton::LeftStickUp,
-            name: "LS Up",
-            category: "Left Stick (LS)",
+            name: "Up",
+            category: "Left Stick",
             description: "Left Stick Y-Axis Negative (Forward)",
             evdev_code: 1, // ABS_Y
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::LeftStickDown,
-            name: "LS Down",
-            category: "Left Stick (LS)",
+            name: "Down",
+            category: "Left Stick",
             description: "Left Stick Y-Axis Positive (Backward)",
             evdev_code: 1, // ABS_Y
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::LeftStickLeft,
-            name: "LS Left",
-            category: "Left Stick (LS)",
+            name: "Left",
+            category: "Left Stick",
             description: "Left Stick X-Axis Negative (Left)",
             evdev_code: 0, // ABS_X
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::LeftStickRight,
-            name: "LS Right",
-            category: "Left Stick (LS)",
+            name: "Right",
+            category: "Left Stick",
             description: "Left Stick X-Axis Positive (Right)",
             evdev_code: 0, // ABS_X
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::L3,
-            name: "L3 (LS Click)",
-            category: "Left Stick (LS)",
+            name: "L3",
+            category: "Left Stick",
             description: "Press Left Stick (Sprint)",
             evdev_code: 317, // BTN_THUMBL
         },
@@ -182,36 +182,36 @@ pub fn get_all_gamepad_buttons() -> &'static [GamepadButtonInfo] {
         // Right Stick (Camera)
         GamepadButtonInfo {
             id: VirtualGamepadButton::RightStickUp,
-            name: "RS Up",
-            category: "Right Stick (RS)",
+            name: "Up",
+            category: "Right Stick",
             description: "Right Stick Y-Axis Negative (Look Up)",
             evdev_code: 4, // ABS_RY
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::RightStickDown,
-            name: "RS Down",
-            category: "Right Stick (RS)",
+            name: "Down",
+            category: "Right Stick",
             description: "Right Stick Y-Axis Positive (Look Down)",
             evdev_code: 4, // ABS_RY
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::RightStickLeft,
-            name: "RS Left",
-            category: "Right Stick (RS)",
+            name: "Left",
+            category: "Right Stick",
             description: "Right Stick X-Axis Negative (Look Left)",
             evdev_code: 3, // ABS_RX
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::RightStickRight,
-            name: "RS Right",
-            category: "Right Stick (RS)",
+            name: "Right",
+            category: "Right Stick",
             description: "Right Stick X-Axis Positive (Look Right)",
             evdev_code: 3, // ABS_RX
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::R3,
-            name: "R3 (RS Click)",
-            category: "Right Stick (RS)",
+            name: "R3",
+            category: "Right Stick",
             description: "Press Right Stick (Melee / Zoom)",
             evdev_code: 318, // BTN_THUMBR
         },
@@ -226,16 +226,16 @@ pub fn get_all_gamepad_buttons() -> &'static [GamepadButtonInfo] {
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::Back,
-            name: "Back / View",
+            name: "Back",
             category: "Menus & System",
             description: "Back / Map Button",
             evdev_code: 314, // BTN_SELECT
         },
         GamepadButtonInfo {
             id: VirtualGamepadButton::Guide,
-            name: "Guide / Home",
+            name: "Home",
             category: "Menus & System",
-            description: "Xbox / Guide Button",
+            description: "Xbox Home Button",
             evdev_code: 316, // BTN_MODE
         },
     ];

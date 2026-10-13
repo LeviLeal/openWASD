@@ -1,12 +1,12 @@
-use crate::controller_diagram::ControllerDiagram;
+use crate::controller_diagram::{ControllerDiagram, DiagramAction};
 use crate::gamepad_types::{get_all_gamepad_buttons, GamepadButtonInfo, VirtualGamepadButton};
 use crate::key_codes::{egui_key_to_evdev, evdev_to_key_name};
 use crate::keyboard_interceptor::{InputDeviceInfo, InterceptorEvent, KeyboardInterceptor};
 use crate::mapping_manager::MappingManager;
 use egui::{
-    pos2, vec2, Align, Align2, Color32, CornerRadius, CursorIcon, FontId, Layout, Margin,
-    PointerButton, Rect, ResizeDirection, RichText, Sense, Stroke, StrokeKind, Ui, ViewportCommand,
-    Visuals, Window,
+    pos2, vec2, Align, Align2, Color32, CornerRadius, CursorIcon, FontFamily, FontId, Layout,
+    Margin, PointerButton, Rect, ResizeDirection, RichText, Sense, Stroke, StrokeKind, TextStyle,
+    Ui, ViewportCommand, Visuals, Window,
 };
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
@@ -17,7 +17,7 @@ pub enum ViewTab {
     Diagram,
 }
 
-pub struct WasdApp {
+pub struct OpenWasdApp {
     mapping_manager: MappingManager,
     interceptor: KeyboardInterceptor,
     diagram: ControllerDiagram,
@@ -42,9 +42,13 @@ pub struct WasdApp {
 
     // Console de logs
     logs: VecDeque<(String, String)>,
+
+    // Estado de janela para manter foco em transições
+    was_maximized: bool,
+    was_minimized: bool,
 }
 
-impl WasdApp {
+impl OpenWasdApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         Self::configure_style(&cc.egui_ctx);
 
@@ -73,9 +77,11 @@ impl WasdApp {
             save_profile_input: String::new(),
             modal_clear_all: false,
             logs: VecDeque::new(),
+            was_maximized: false,
+            was_minimized: false,
         };
 
-        app.log("WASD Anywhere initialized. Default FPS profile active.");
+        app.log("openWASD initialized. Default FPS profile active.");
         app
     }
 
@@ -106,7 +112,21 @@ impl WasdApp {
         visuals.selection.bg_fill = Color32::from_rgb(2, 132, 199);
         visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
 
-        ctx.set_visuals(visuals);
+        ctx.all_styles_mut(|style| {
+            style.visuals = visuals.clone();
+
+            // Espaçamento e padding maiores para botões mais confortáveis e acessíveis
+            style.spacing.button_padding = vec2(12.0, 7.0);
+            style.spacing.item_spacing = vec2(8.0, 8.0);
+            style.spacing.interact_size = vec2(40.0, 28.0);
+
+            // Aumentar o tamanho das fontes e definir fonte proporcional (sem monospace)
+            style.text_styles.insert(TextStyle::Small, FontId::new(12.0, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Body, FontId::new(14.0, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Button, FontId::new(14.0, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Heading, FontId::new(18.5, FontFamily::Proportional));
+            style.text_styles.insert(TextStyle::Monospace, FontId::new(13.5, FontFamily::Proportional));
+        });
     }
 
     fn log(&mut self, text: impl Into<String>) {
@@ -182,7 +202,7 @@ impl WasdApp {
                             self.interceptor
                                 .update_mappings(self.current_mappings_for_interceptor());
                             self.log(format!(
-                                "Bound: [{:?}] -> {} (code {})",
+                                "Bound: {:?} -> {} (code {})",
                                 listening_btn, key_name, evdev_code
                             ));
                         }
@@ -202,7 +222,7 @@ impl WasdApp {
                         let btn_names: Vec<String> =
                             btns.iter().map(|b| format!("{:?}", b)).collect();
                         self.log(format!(
-                            "Live key: {} (evdev {}) -> [{}]",
+                            "Live key: {} (evdev {}) -> {}",
                             evdev_to_key_name(evdev_code),
                             evdev_code,
                             btn_names.join(", ")
@@ -254,7 +274,7 @@ impl WasdApp {
                 self.interceptor
                     .update_mappings(self.current_mappings_for_interceptor());
                 self.log(format!(
-                    "Bound via GUI: [{:?}] -> {} (code {})",
+                    "Bound via GUI: {:?} -> {} (code {})",
                     listening_btn, key_name, code
                 ));
             }
@@ -262,16 +282,65 @@ impl WasdApp {
     }
 }
 
-impl eframe::App for WasdApp {
+impl eframe::App for OpenWasdApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        egui::Color32::TRANSPARENT.to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.process_interceptor_events();
         self.check_window_key_presses(&ctx);
 
-        // Se estiver escutando tecla ou emulando, solicita redesenho contínuo
-        if self.listening_button.is_some() || self.emulation_active {
+        // Detectar transição de maximizado / restaurado ou desminimizado
+        let current_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        let current_minimized = ctx.input(|i| i.viewport().minimized.unwrap_or(false));
+
+        if self.was_maximized != current_maximized {
+            self.was_maximized = current_maximized;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             ctx.request_repaint();
         }
+
+        if self.was_minimized && !current_minimized {
+            self.was_minimized = false;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.request_repaint();
+        } else {
+            self.was_minimized = current_minimized;
+        }
+
+        // Se a janela estiver sem foco mas o mouse estiver sobre ela ou qualquer clique/movimento ocorrer,
+        // restaurar foco para que os estados de hover e interações não fiquem congelados
+        let is_focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let pointer_inside = ctx.input(|i| i.pointer.hover_pos().is_some());
+        if !is_focused && (pointer_inside || ctx.input(|i| i.pointer.is_moving() || i.pointer.any_click())) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.request_repaint();
+        }
+
+        // Garante que o hover e animações respondam imediatamente
+        if self.listening_button.is_some()
+            || self.emulation_active
+            || pointer_inside
+            || ctx.input(|i| i.pointer.is_moving())
+        {
+            ctx.request_repaint();
+        }
+
+        let is_maximized = current_maximized;
+        let window_corner_radius = if is_maximized {
+            CornerRadius::ZERO
+        } else {
+            CornerRadius::same(12)
+        };
+
+        // Fundo da janela com cantos arredondados quando em modo janela
+        ui.painter().rect_filled(
+            ui.max_rect(),
+            window_corner_radius,
+            Color32::from_rgb(15, 23, 42),
+        );
 
         // ==========================================
         // 0. CSD Custom Titlebar (Título no meio, Fechar, Maximizar, Minimizar)
@@ -279,19 +348,23 @@ impl eframe::App for WasdApp {
         self.render_csd_titlebar(ui, &ctx);
 
         // Moldura externa da janela para bordas nítidas (quando não maximizado)
-        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
         if !is_maximized {
             ui.painter().rect_stroke(
                 ui.max_rect(),
-                CornerRadius::ZERO,
+                window_corner_radius,
                 Stroke::new(1.0, Color32::from_rgb(37, 51, 74)),
                 StrokeKind::Inside,
             );
         }
 
-        // Conteúdo com espaçamento e padding
+        // Conteúdo com espaçamento e padding equilibrado
         egui::Frame::new()
-            .inner_margin(Margin::symmetric(14, 10))
+            .inner_margin(Margin {
+                left: 20,
+                right: 22,
+                top: 10,
+                bottom: 12,
+            })
             .show(ui, |ui| {
                 // ==========================================
                 // 1. Top Header (Profiles & Emulation Switch)
@@ -344,11 +417,12 @@ impl eframe::App for WasdApp {
         // ==========================================
         // Redimensionamento de bordas e cantos da janela (CSD)
         // ==========================================
-        self.handle_window_edge_resize(&ctx, ui.max_rect());
+        let window_rect = ctx.input(|i| i.viewport_rect());
+        self.handle_window_edge_resize(&ctx, window_rect);
     }
 }
 
-impl WasdApp {
+impl OpenWasdApp {
     fn render_csd_titlebar(&mut self, ui: &mut Ui, ctx: &egui::Context) {
         let titlebar_height = 38.0;
         let available_width = ui.available_width();
@@ -359,9 +433,19 @@ impl WasdApp {
 
         let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
 
-        // Background do CSD
+        // Background do CSD com cantos superiores arredondados em modo janela
         let painter = ui.painter_at(titlebar_rect);
-        painter.rect_filled(titlebar_rect, 0.0, Color32::from_rgb(11, 17, 33));
+        let titlebar_corner_radius = if is_maximized {
+            CornerRadius::ZERO
+        } else {
+            CornerRadius {
+                nw: 12,
+                ne: 12,
+                sw: 0,
+                se: 0,
+            }
+        };
+        painter.rect_filled(titlebar_rect, titlebar_corner_radius, Color32::from_rgb(11, 17, 33));
         painter.line_segment(
             [titlebar_rect.left_bottom(), titlebar_rect.right_bottom()],
             Stroke::new(1.0, Color32::from_rgb(30, 41, 59)),
@@ -372,7 +456,7 @@ impl WasdApp {
         painter.text(
             center_pos,
             Align2::CENTER_CENTER,
-            "WASD Anywhere — Virtual Gamepad Mapper",
+            "openWASD — Virtual Gamepad Mapper",
             FontId::proportional(13.0),
             Color32::from_rgb(226, 232, 240),
         );
@@ -412,11 +496,7 @@ impl WasdApp {
         let btn_height = if is_maximized { titlebar_height } else { 26.0 };
         let close_width = if is_maximized { 46.0 } else { 40.0 };
         let other_btn_width = if is_maximized { 44.0 } else { 36.0 };
-        let btn_radius = if is_maximized {
-            CornerRadius::ZERO
-        } else {
-            CornerRadius::same(5)
-        };
+        let hover_corner_radius = CornerRadius::same(6);
 
         let mut right_ui = ui.new_child(
             egui::UiBuilder::default()
@@ -437,10 +517,21 @@ impl WasdApp {
             right_ui.allocate_exact_size(vec2(close_width, btn_height), Sense::click());
 
         let close_color = if close_resp.hovered() {
+            let hover_rect = if is_maximized {
+                close_rect.shrink2(vec2(3.0, 3.0))
+            } else {
+                close_rect
+            };
             right_ui.painter().rect_filled(
-                close_rect,
-                btn_radius,
+                hover_rect,
+                hover_corner_radius,
                 Color32::from_rgb(239, 68, 68),
+            );
+            right_ui.painter().rect_stroke(
+                hover_rect,
+                hover_corner_radius,
+                Stroke::new(1.0, Color32::from_rgb(252, 165, 165)),
+                StrokeKind::Inside,
             );
             Color32::WHITE
         } else {
@@ -471,10 +562,21 @@ impl WasdApp {
             right_ui.allocate_exact_size(vec2(other_btn_width, btn_height), Sense::click());
 
         let max_color = if max_resp.hovered() {
+            let hover_rect = if is_maximized {
+                max_rect.shrink2(vec2(3.0, 3.0))
+            } else {
+                max_rect
+            };
             right_ui.painter().rect_filled(
-                max_rect,
-                btn_radius,
+                hover_rect,
+                hover_corner_radius,
                 Color32::from_rgb(51, 65, 85),
+            );
+            right_ui.painter().rect_stroke(
+                hover_rect,
+                hover_corner_radius,
+                Stroke::new(1.0, Color32::from_rgb(100, 116, 139)),
+                StrokeKind::Inside,
             );
             Color32::WHITE
         } else {
@@ -516,6 +618,8 @@ impl WasdApp {
 
         if max_resp.clicked() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            ctx.request_repaint();
         }
 
         if !is_maximized {
@@ -527,10 +631,21 @@ impl WasdApp {
             right_ui.allocate_exact_size(vec2(other_btn_width, btn_height), Sense::click());
 
         let min_color = if min_resp.hovered() {
+            let hover_rect = if is_maximized {
+                min_rect.shrink2(vec2(3.0, 3.0))
+            } else {
+                min_rect
+            };
             right_ui.painter().rect_filled(
-                min_rect,
-                btn_radius,
+                hover_rect,
+                hover_corner_radius,
                 Color32::from_rgb(51, 65, 85),
+            );
+            right_ui.painter().rect_stroke(
+                hover_rect,
+                hover_corner_radius,
+                Stroke::new(1.0, Color32::from_rgb(100, 116, 139)),
+                StrokeKind::Inside,
             );
             Color32::WHITE
         } else {
@@ -566,6 +681,8 @@ impl WasdApp {
             }
             if titlebar_response.double_clicked() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                ctx.request_repaint();
             }
         }
     }
@@ -580,13 +697,13 @@ impl WasdApp {
             return;
         };
 
-        let border_thickness = 8.0;
-        let corner_size = 18.0;
+        let border_thickness = 10.0;
+        let corner_size = 22.0;
 
-        let on_left = pos.x <= rect.left() + border_thickness && pos.x >= rect.left() - 4.0;
-        let on_right = pos.x >= rect.right() - border_thickness && pos.x <= rect.right() + 4.0;
-        let on_top = pos.y <= rect.top() + border_thickness && pos.y >= rect.top() - 4.0;
-        let on_bottom = pos.y >= rect.bottom() - border_thickness && pos.y <= rect.bottom() + 4.0;
+        let on_left = pos.x <= rect.left() + border_thickness;
+        let on_right = pos.x >= rect.right() - border_thickness;
+        let on_top = pos.y <= rect.top() + border_thickness;
+        let on_bottom = pos.y >= rect.bottom() - border_thickness;
 
         let dir_and_cursor = if on_top && on_left {
             Some((ResizeDirection::NorthWest, CursorIcon::ResizeNorthWest))
@@ -651,7 +768,7 @@ impl WasdApp {
                         });
 
                     if ui
-                        .button(RichText::new("💾 Save").color(Color32::WHITE))
+                        .add(egui::Button::new(RichText::new("💾 Save").size(13.5).color(Color32::WHITE)).min_size(vec2(0.0, 32.0)))
                         .clicked()
                     {
                         self.save_profile_input = current_name;
@@ -659,7 +776,7 @@ impl WasdApp {
                     }
 
                     if ui
-                        .button(RichText::new("➕ New").color(Color32::WHITE))
+                        .add(egui::Button::new(RichText::new("➕ New").size(13.5).color(Color32::WHITE)).min_size(vec2(0.0, 32.0)))
                         .clicked()
                     {
                         self.new_profile_input = "My Custom Profile".to_string();
@@ -667,7 +784,7 @@ impl WasdApp {
                     }
 
                     if ui
-                        .button(RichText::new("↺ Default").color(Color32::WHITE))
+                        .add(egui::Button::new(RichText::new("↺ Default").size(13.5).color(Color32::WHITE)).min_size(vec2(0.0, 32.0)))
                         .clicked()
                     {
                         self.mapping_manager.apply_default_fps_profile();
@@ -677,7 +794,7 @@ impl WasdApp {
                     }
 
                     if ui
-                        .button(RichText::new("🗑 Clear All").color(Color32::from_rgb(239, 68, 68)))
+                        .add(egui::Button::new(RichText::new("🗑 Clear All").size(13.5).color(Color32::from_rgb(239, 68, 68))).min_size(vec2(0.0, 32.0)))
                         .clicked()
                     {
                         self.modal_clear_all = true;
@@ -688,18 +805,21 @@ impl WasdApp {
                         if self.emulation_active {
                             ui.label(
                                 RichText::new("● Emulating: Xbox 360 pad")
+                                    .size(13.5)
                                     .color(Color32::from_rgb(34, 197, 94))
                                     .strong(),
                             );
                         } else if self.permission_error.is_some() {
                             ui.label(
                                 RichText::new("✖ Permission Error")
+                                    .size(13.5)
                                     .color(Color32::from_rgb(239, 68, 68))
                                     .strong(),
                             );
                         } else {
                             ui.label(
                                 RichText::new("○ Inactive")
+                                    .size(13.5)
                                     .color(Color32::from_rgb(148, 163, 184))
                                     .strong(),
                             );
@@ -715,10 +835,10 @@ impl WasdApp {
                         };
 
                         let btn = egui::Button::new(
-                            RichText::new(btn_text).strong().size(13.5).color(Color32::WHITE),
+                            RichText::new(btn_text).strong().size(14.0).color(Color32::WHITE),
                         )
                         .fill(btn_color)
-                        .min_size(vec2(140.0, 32.0))
+                        .min_size(vec2(150.0, 34.0))
                         .corner_radius(CornerRadius::same(6));
 
                         if ui.add(btn).clicked() {
@@ -739,14 +859,15 @@ impl WasdApp {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new("⚠ Permission Denied:")
+                            .size(13.5)
                             .color(Color32::from_rgb(248, 113, 113))
                             .strong(),
                     );
-                    ui.label(format!("Cannot read input device or /dev/uinput at '{}'.", path));
+                    ui.label(RichText::new(format!("Cannot read input device or /dev/uinput at '{}'.", path)).size(13.0));
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if ui
-                            .button(RichText::new("Run Fix Script (Terminal)").strong().color(Color32::WHITE))
+                            .add(egui::Button::new(RichText::new("Run Fix Script (Terminal)").size(13.0).strong().color(Color32::WHITE)).min_size(vec2(0.0, 28.0)))
                             .clicked()
                         {
                             let _ = std::process::Command::new("xdg-terminal-exec")
@@ -756,7 +877,7 @@ impl WasdApp {
 
                         ui.label(
                             RichText::new("Tip: Run ./setup_permissions.sh in terminal")
-                                .monospace()
+                                .size(12.5)
                                 .color(Color32::from_rgb(252, 211, 77)),
                         );
                     });
@@ -770,14 +891,14 @@ impl WasdApp {
             let is_diag = self.active_tab == ViewTab::Diagram;
 
             if ui
-                .selectable_label(is_cols, RichText::new("📋 Key Bindings Matrix").strong())
+                .selectable_label(is_cols, RichText::new("📋 Key Bindings Matrix").size(13.5).strong())
                 .clicked()
             {
                 self.active_tab = ViewTab::Columns;
             }
 
             if ui
-                .selectable_label(is_diag, RichText::new("🎮 Controller Diagram").strong())
+                .selectable_label(is_diag, RichText::new("🎮 Controller Diagram").size(13.5).strong())
                 .clicked()
             {
                 self.active_tab = ViewTab::Diagram;
@@ -787,9 +908,10 @@ impl WasdApp {
             if let Some(listening_btn) = self.listening_button {
                 ui.label(
                     RichText::new(format!(
-                        "⚡ Listening for key for [{:?}]... (Press any key, or Esc to cancel)",
+                        "⚡ Listening for key for {:?}... (Press any key, or Esc to cancel)",
                         listening_btn
                     ))
+                    .size(13.5)
                     .color(Color32::from_rgb(251, 191, 36))
                     .strong(),
                 );
@@ -817,30 +939,62 @@ impl WasdApp {
             }
         }
 
+        let columns_data = [
+            ("Left Stick", left_stick_btns),
+            ("Buttons & Shoulders", action_btns),
+            ("Right Stick", right_stick_btns),
+            ("D-Pad & Menus", dpad_menu_btns),
+        ];
+
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .max_height(ui.available_height() - 110.0)
+            .max_height(ui.available_height() - 125.0)
             .show(ui, |ui| {
-                ui.columns(4, |cols| {
-                    self.render_button_column(&mut cols[0], "Left Stick (LS)", &left_stick_btns);
-                    self.render_button_column(&mut cols[1], "Buttons & Shoulders", &action_btns);
-                    self.render_button_column(&mut cols[2], "Right Stick (RS)", &right_stick_btns);
-                    self.render_button_column(&mut cols[3], "D-Pad & Menus", &dpad_menu_btns);
+                // Deixa 20px de respiro confortável na direita para não colar na barra de rolagem / borda da janela
+                let scroll_w = (ui.available_width() - 20.0).max(400.0);
+                let col_spacing = 14.0;
+                let num_cols = 4.0;
+                let col_w = ((scroll_w - col_spacing * (num_cols - 1.0)) / num_cols).floor().max(170.0);
+
+                ui.horizontal_top(|ui| {
+                    ui.spacing_mut().item_spacing.x = col_spacing;
+                    for (title, btns) in &columns_data {
+                        ui.allocate_ui_with_layout(
+                            vec2(col_w, ui.available_height()),
+                            Layout::top_down(Align::Min),
+                            |col_ui| {
+                                col_ui.set_width(col_w);
+                                self.render_button_column(col_ui, title, btns, col_w);
+                            },
+                        );
+                    }
                 });
             });
     }
 
-    fn render_button_column(&mut self, ui: &mut Ui, title: &str, buttons: &[&GamepadButtonInfo]) {
+    fn render_button_column(&mut self, ui: &mut Ui, title: &str, buttons: &[&GamepadButtonInfo], col_w: f32) {
+        let frame_padding_x = 8.0;
+        let content_w = col_w - (frame_padding_x * 2.0);
+
+        // Dimensões calculadas com precisão milimétrica para alinhamento uniforme
+        let label_w = 64.0;
+        let unbind_w = 26.0;
+        let row_item_spacing = 5.0;
+        let rebind_w = (content_w - label_w - unbind_w - (row_item_spacing * 2.0)).floor().max(50.0);
+
         egui::Frame::new()
             .fill(Color32::from_rgb(20, 29, 44))
             .stroke(Stroke::new(1.0, Color32::from_rgb(37, 51, 74)))
             .corner_radius(CornerRadius::same(8))
-            .inner_margin(Margin::same(10))
+            .inner_margin(Margin::symmetric(frame_padding_x as i8, 10))
             .show(ui, |ui| {
+                ui.set_width(content_w);
+                ui.spacing_mut().button_padding = vec2(6.0, 5.0);
+
                 ui.label(
                     RichText::new(title)
                         .strong()
-                        .size(13.5)
+                        .size(14.0)
                         .color(Color32::from_rgb(56, 189, 248)),
                 );
                 ui.add_space(8.0);
@@ -851,35 +1005,39 @@ impl WasdApp {
                     let binding = self.mapping_manager.get_binding(b.id).cloned();
 
                     ui.horizontal(|ui| {
-                        // Nome do botão com tooltip
+                        ui.spacing_mut().item_spacing.x = row_item_spacing;
+
+                        // 1. Nome do botão com largura fixa
                         let name_color = if is_pressed {
                             Color32::from_rgb(34, 197, 94)
                         } else {
                             Color32::from_rgb(226, 232, 240)
                         };
 
-                        let _ = ui
-                            .add_sized([75.0, 24.0], egui::Label::new(
-                                RichText::new(b.name).color(name_color).strong(),
-                            ))
-                            .on_hover_text(b.description);
+                        ui.add_sized(
+                            [label_w, 32.0],
+                            egui::Label::new(
+                                RichText::new(b.name).size(13.0).color(name_color).strong(),
+                            ),
+                        )
+                        .on_hover_text(b.description);
 
-                        // Botão de remapeamento
+                        // 2. Botão de remapeamento com LARGURA EXATA E IDÊNTICA EM TODAS AS LINHAS
                         let (btn_text, btn_fill, btn_text_color) = if is_listening {
                             (
-                                "🟡 Press key...".to_string(),
+                                "Press key...".to_string(),
                                 Color32::from_rgb(180, 83, 9),
                                 Color32::WHITE,
                             )
                         } else if let Some(bind) = binding {
                             (
-                                format!("[ {} ]", bind.key_name),
+                                bind.key_name.clone(),
                                 Color32::from_rgb(30, 41, 59),
                                 Color32::from_rgb(56, 189, 248),
                             )
                         } else {
                             (
-                                "[ Unbound ]".to_string(),
+                                "Unbound".to_string(),
                                 Color32::from_rgb(26, 36, 52),
                                 Color32::from_rgb(148, 163, 184),
                             )
@@ -887,15 +1045,14 @@ impl WasdApp {
 
                         let rebind_btn = egui::Button::new(
                             RichText::new(btn_text)
-                                .monospace()
-                                .size(11.5)
+                                .size(13.0)
+                                .strong()
                                 .color(btn_text_color),
                         )
                         .fill(btn_fill)
-                        .min_size(vec2(ui.available_width() - 32.0, 24.0))
-                        .corner_radius(CornerRadius::same(5));
+                        .corner_radius(CornerRadius::same(6));
 
-                        if ui.add(rebind_btn).clicked() {
+                        if ui.add_sized([rebind_w, 32.0], rebind_btn).clicked() {
                             if is_listening {
                                 self.listening_button = None;
                                 self.diagram.listening_button = None;
@@ -907,15 +1064,20 @@ impl WasdApp {
                             }
                         }
 
-                        // Botão unbind "×"
+                        // 3. Botão unbind "×" com LARGURA E POSIÇÃO RIGOROSAMENTE ALINHADA
+                        let unbind_btn = egui::Button::new(
+                            RichText::new("×").size(16.0).color(Color32::from_rgb(239, 68, 68)),
+                        )
+                        .corner_radius(CornerRadius::same(6));
+
                         if ui
-                            .add_sized([22.0, 22.0], egui::Button::new(RichText::new("×").color(Color32::from_rgb(239, 68, 68))))
+                            .add_sized([unbind_w, 32.0], unbind_btn)
                             .on_hover_text("Unbind key")
                             .clicked()
                         {
                             self.mapping_manager.clear_binding(b.id);
                             self.interceptor.update_mappings(self.current_mappings_for_interceptor());
-                            self.log(format!("Unbound [{:?}]", b.id));
+                            self.log(format!("Unbound {:?}", b.id));
                         }
                     });
 
@@ -925,15 +1087,24 @@ impl WasdApp {
     }
 
     fn render_diagram_view(&mut self, ui: &mut Ui) {
-        if let Some(clicked_btn) = self.diagram.show(ui, &mut self.mapping_manager) {
-            if self.listening_button == Some(clicked_btn) {
-                self.listening_button = None;
-                self.diagram.listening_button = None;
-                self.interceptor.set_paused(false);
-            } else {
-                self.listening_button = Some(clicked_btn);
-                self.diagram.listening_button = Some(clicked_btn);
-                self.interceptor.set_paused(true);
+        if let Some(action) = self.diagram.show(ui, &mut self.mapping_manager) {
+            match action {
+                DiagramAction::Remap(clicked_btn) => {
+                    if self.listening_button == Some(clicked_btn) {
+                        self.listening_button = None;
+                        self.diagram.listening_button = None;
+                        self.interceptor.set_paused(false);
+                    } else {
+                        self.listening_button = Some(clicked_btn);
+                        self.diagram.listening_button = Some(clicked_btn);
+                        self.interceptor.set_paused(true);
+                    }
+                }
+                DiagramAction::Unbind(btn) => {
+                    self.mapping_manager.clear_binding(btn);
+                    self.interceptor.update_mappings(self.current_mappings_for_interceptor());
+                    self.log(format!("Unbound {:?}", btn));
+                }
             }
         }
     }
@@ -943,9 +1114,12 @@ impl WasdApp {
             .fill(Color32::from_rgb(20, 29, 44))
             .stroke(Stroke::new(1.0, Color32::from_rgb(37, 51, 74)))
             .corner_radius(CornerRadius::same(8))
-            .inner_margin(Margin::symmetric(12, 8))
+            .inner_margin(Margin::symmetric(14, 8))
             .show(ui, |ui| {
+                // Linha 1: Seleção de teclado e Modo Exclusivo
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+
                     ui.label(RichText::new("Keyboard:").strong());
 
                     let current_kbd_label = self
@@ -956,7 +1130,7 @@ impl WasdApp {
 
                     let mut newly_selected = None;
                     egui::ComboBox::from_id_salt("kbd_combo")
-                        .width(260.0)
+                        .width(220.0)
                         .selected_text(&current_kbd_label)
                         .show_ui(ui, |ui| {
                             for (idx, kbd) in self.keyboards.iter().enumerate() {
@@ -976,7 +1150,7 @@ impl WasdApp {
                     }
 
                     if ui
-                        .button(RichText::new("🔄 Refresh").color(Color32::WHITE))
+                        .add(egui::Button::new(RichText::new("🔄 Refresh").size(13.0).color(Color32::WHITE)).min_size(vec2(0.0, 28.0)))
                         .on_hover_text("Scan for connected keyboards")
                         .clicked()
                     {
@@ -988,44 +1162,52 @@ impl WasdApp {
                         ));
                     }
 
-                    ui.add_space(10.0);
+                    ui.add_space(14.0);
 
                     ui.checkbox(
                         &mut self.exclusive_grab,
-                        "Exclusive Mode (block typing in system)",
+                        RichText::new("Exclusive Mode (block typing in system)").size(13.0),
                     )
                     .on_hover_text(
                         "Grabs the keyboard so keystrokes won't type into other apps/games while emulating.",
                     );
+                });
 
-                    ui.add_space(10.0);
+                ui.add_space(4.0);
 
-                    // Console de Log rápido em linha única / botão para limpar
+                // Linha 2: Console de Logs / Status com botão Clear à direita
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+
                     let latest_log = self
                         .logs
                         .back()
-                        .map(|(t, m)| format!("[{}] {}", t, m))
+                        .map(|(t, m)| format!("{} — {}", t, m))
                         .unwrap_or_else(|| self.status_message.clone());
 
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui
-                            .button(RichText::new("Clear").size(10.5))
-                            .on_hover_text("Clear logs")
-                            .clicked()
-                        {
-                            self.logs.clear();
-                        }
+                    ui.label(RichText::new("Status:").strong().size(12.5).color(Color32::from_rgb(148, 163, 184)));
 
-                        ui.add_sized(
-                            [ui.available_width() - 10.0, 20.0],
-                            egui::Label::new(
-                                RichText::new(latest_log)
-                                    .monospace()
-                                    .size(11.0)
-                                    .color(Color32::from_rgb(148, 163, 184)),
-                            ),
-                        );
-                    });
+                    let clear_btn_w = 54.0;
+                    let spacing_x = ui.spacing().item_spacing.x;
+                    let log_w = (ui.available_width() - clear_btn_w - spacing_x).max(50.0);
+
+                    ui.add_sized(
+                        [log_w, 24.0],
+                        egui::Label::new(
+                            RichText::new(latest_log)
+                                .size(12.5)
+                                .color(Color32::from_rgb(203, 213, 225)),
+                        )
+                        .truncate(),
+                    );
+
+                    if ui
+                        .add_sized([clear_btn_w, 24.0], egui::Button::new(RichText::new("Clear").size(12.0)))
+                        .on_hover_text("Clear logs")
+                        .clicked()
+                    {
+                        self.logs.clear();
+                    }
                 });
             });
     }
@@ -1038,12 +1220,12 @@ impl WasdApp {
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                 .show(ctx, |ui| {
-                    ui.label("Enter a name for this profile:");
+                    ui.label(RichText::new("Enter a name for this profile:").size(13.5));
                     ui.text_edit_singleline(&mut self.save_profile_input);
                     ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
-                        if ui.button("Save").clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Save").size(13.5)).min_size(vec2(80.0, 32.0))).clicked() {
                             let name = self.save_profile_input.trim();
                             if !name.is_empty() {
                                 if let Err(e) = self.mapping_manager.save_profile(name) {
@@ -1055,7 +1237,7 @@ impl WasdApp {
                             }
                         }
 
-                        if ui.button("Cancel").clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Cancel").size(13.5)).min_size(vec2(80.0, 32.0))).clicked() {
                             self.modal_save_profile = false;
                         }
                     });
@@ -1069,12 +1251,12 @@ impl WasdApp {
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                 .show(ctx, |ui| {
-                    ui.label("Profile Name:");
+                    ui.label(RichText::new("Profile Name:").size(13.5));
                     ui.text_edit_singleline(&mut self.new_profile_input);
                     ui.add_space(10.0);
 
                     ui.horizontal(|ui| {
-                        if ui.button("Create & Clear Bindings").clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Create & Clear Bindings").size(13.5)).min_size(vec2(160.0, 32.0))).clicked() {
                             let name = self.new_profile_input.trim();
                             if !name.is_empty() {
                                 self.mapping_manager.clear_all_bindings();
@@ -1086,7 +1268,7 @@ impl WasdApp {
                             }
                         }
 
-                        if ui.button("Cancel").clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Cancel").size(13.5)).min_size(vec2(80.0, 32.0))).clicked() {
                             self.modal_new_profile = false;
                         }
                     });
@@ -1100,12 +1282,12 @@ impl WasdApp {
                 .resizable(false)
                 .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0))
                 .show(ctx, |ui| {
-                    ui.label("Are you sure you want to unbind all controller buttons?");
+                    ui.label(RichText::new("Are you sure you want to unbind all controller buttons?").size(13.5));
                     ui.add_space(12.0);
 
                     ui.horizontal(|ui| {
                         if ui
-                            .button(RichText::new("Yes, Unbind All").color(Color32::from_rgb(239, 68, 68)))
+                            .add(egui::Button::new(RichText::new("Yes, Unbind All").size(13.5).color(Color32::from_rgb(239, 68, 68))).min_size(vec2(120.0, 32.0)))
                             .clicked()
                         {
                             self.mapping_manager.clear_all_bindings();
@@ -1115,7 +1297,7 @@ impl WasdApp {
                             self.modal_clear_all = false;
                         }
 
-                        if ui.button("Cancel").clicked() {
+                        if ui.add(egui::Button::new(RichText::new("Cancel").size(13.5)).min_size(vec2(80.0, 32.0))).clicked() {
                             self.modal_clear_all = false;
                         }
                     });

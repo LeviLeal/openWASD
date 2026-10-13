@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=WASD Anywhere
+Name=openWASD
 Comment=Virtual Gamepad Mapper for Keyboard
-Exec=wasd-gui
-Icon=wasd-anywhere
+Exec=openwasd
+Icon=openwasd
 Terminal=false
 Type=Application
 Categories=Game;Utility;
-Keywords=gamepad;controller;xbox;virtual;mapper;wasd;
+Keywords=gamepad;controller;xbox;virtual;mapper;wasd;openwasd;

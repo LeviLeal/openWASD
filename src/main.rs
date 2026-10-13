@@ -6,16 +6,17 @@ mod keyboard_interceptor;
 mod mapping_manager;
 mod virtual_gamepad;
 
-use app::WasdApp;
+use app::OpenWasdApp;
 use eframe::egui::{vec2, ViewportBuilder};
 use std::sync::Arc;
 
 fn main() -> eframe::Result<()> {
     let mut viewport = ViewportBuilder::default()
-        .with_title("WASD Anywhere — Virtual Gamepad Mapper")
+        .with_title("openWASD — Virtual Gamepad Mapper")
         .with_inner_size(vec2(1200.0, 780.0))
         .with_min_inner_size(vec2(950.0, 650.0))
         .with_decorations(false)
+        .with_transparent(true)
         .with_resizable(true);
 
     // Carregar ícone embutido do aplicativo
@@ -36,8 +37,8 @@ fn main() -> eframe::Result<()> {
     };
 
     eframe::run_native(
-        "WASD Anywhere",
+        "openWASD",
         options,
-        Box::new(|cc| Ok(Box::new(WasdApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(OpenWasdApp::new(cc)))),
     )
 }
