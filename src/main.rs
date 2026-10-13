@@ -14,7 +14,9 @@ fn main() -> eframe::Result<()> {
     let mut viewport = ViewportBuilder::default()
         .with_title("WASD Anywhere — Virtual Gamepad Mapper")
         .with_inner_size(vec2(1200.0, 780.0))
-        .with_min_inner_size(vec2(950.0, 650.0));
+        .with_min_inner_size(vec2(950.0, 650.0))
+        .with_decorations(false)
+        .with_resizable(true);
 
     // Carregar ícone embutido do aplicativo
     if let Ok(icon_image) = image::load_from_memory(include_bytes!("../icon.png")) {

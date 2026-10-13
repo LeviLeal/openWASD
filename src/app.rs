@@ -4,8 +4,8 @@ use crate::key_codes::{egui_key_to_evdev, evdev_to_key_name};
 use crate::keyboard_interceptor::{InputDeviceInfo, InterceptorEvent, KeyboardInterceptor};
 use crate::mapping_manager::MappingManager;
 use egui::{
-    vec2, Align, Align2, Color32, CornerRadius, Layout, Margin, RichText, Stroke, Ui,
-    Visuals, Window,
+    vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, RichText, Sense,
+    Stroke, StrokeKind, Ui, Visuals, Window,
 };
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
@@ -272,49 +272,65 @@ impl eframe::App for WasdApp {
             ctx.request_repaint();
         }
 
-        ui.add_space(8.0);
+        // ==========================================
+        // 0. CSD Custom Titlebar (Título no meio, Fechar, Maximizar, Minimizar)
+        // ==========================================
+        self.render_csd_titlebar(ui, &ctx);
 
-        // ==========================================
-        // 1. Top Header (Logo, Profiles, Emulation Switch)
-        // ==========================================
-        self.render_top_header(ui);
+        // Moldura externa da janela para bordas nítidas
+        ui.painter().rect_stroke(
+            ui.max_rect(),
+            CornerRadius::ZERO,
+            Stroke::new(1.0, Color32::from_rgb(37, 51, 74)),
+            StrokeKind::Inside,
+        );
 
-        ui.add_space(10.0);
+        // Conteúdo com espaçamento e padding
+        egui::Frame::new()
+            .inner_margin(Margin::symmetric(14, 10))
+            .show(ui, |ui| {
+                // ==========================================
+                // 1. Top Header (Profiles & Emulation Switch)
+                // ==========================================
+                self.render_top_header(ui);
 
-        // ==========================================
-        // 2. Banner de Erro de Permissão (se houver)
-        // ==========================================
-        if let Some((path, _)) = &self.permission_error {
-            let path_clone = path.clone();
-            self.render_permission_banner(ui, &path_clone);
-            ui.add_space(10.0);
-        }
+                ui.add_space(10.0);
 
-        // ==========================================
-        // 3. Tab Bar (Columns vs Diagram View)
-        // ==========================================
-        self.render_tab_bar(ui);
+                // ==========================================
+                // 2. Banner de Erro de Permissão (se houver)
+                // ==========================================
+                if let Some((path, _)) = &self.permission_error {
+                    let path_clone = path.clone();
+                    self.render_permission_banner(ui, &path_clone);
+                    ui.add_space(10.0);
+                }
 
-        ui.add_space(8.0);
+                // ==========================================
+                // 3. Tab Bar (Columns vs Diagram View)
+                // ==========================================
+                self.render_tab_bar(ui);
 
-        // ==========================================
-        // 4. Center Stage
-        // ==========================================
-        match self.active_tab {
-            ViewTab::Columns => {
-                self.render_columns_view(ui);
-            }
-            ViewTab::Diagram => {
-                self.render_diagram_view(ui);
-            }
-        }
+                ui.add_space(8.0);
 
-        ui.add_space(10.0);
+                // ==========================================
+                // 4. Center Stage
+                // ==========================================
+                match self.active_tab {
+                    ViewTab::Columns => {
+                        self.render_columns_view(ui);
+                    }
+                    ViewTab::Diagram => {
+                        self.render_diagram_view(ui);
+                    }
+                }
 
-        // ==========================================
-        // 5. Bottom Panel (Device Settings & Console)
-        // ==========================================
-        self.render_bottom_panel(ui);
+                ui.add_space(10.0);
+
+                // ==========================================
+                // 5. Bottom Panel (Device Settings & Console)
+                // ==========================================
+                self.render_bottom_panel(ui);
+            });
 
         // ==========================================
         // Modais / Dialogs
@@ -324,6 +340,150 @@ impl eframe::App for WasdApp {
 }
 
 impl WasdApp {
+    fn render_csd_titlebar(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+        let titlebar_height = 38.0;
+        let available_width = ui.available_width();
+        let (titlebar_rect, titlebar_response) = ui.allocate_exact_size(
+            vec2(available_width, titlebar_height),
+            Sense::click_and_drag(),
+        );
+
+        let is_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+
+        // Background do CSD
+        let painter = ui.painter_at(titlebar_rect);
+        painter.rect_filled(titlebar_rect, 0.0, Color32::from_rgb(11, 17, 33));
+        painter.line_segment(
+            [titlebar_rect.left_bottom(), titlebar_rect.right_bottom()],
+            Stroke::new(1.0, Color32::from_rgb(30, 41, 59)),
+        );
+
+        // 1. TÍTULO CENTRALIZADO NO MEIO DA JANELA
+        let center_pos = titlebar_rect.center();
+        painter.text(
+            center_pos,
+            Align2::CENTER_CENTER,
+            "WASD Anywhere — Virtual Gamepad Mapper",
+            FontId::proportional(13.0),
+            Color32::from_rgb(226, 232, 240),
+        );
+
+        // 2. LADO ESQUERDO: Ícone e Status
+        let mut left_ui = ui.new_child(
+            egui::UiBuilder::default()
+                .max_rect(titlebar_rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        left_ui.add_space(12.0);
+        left_ui.label(RichText::new("🎮").size(15.0));
+        left_ui.add_space(4.0);
+        left_ui.label(
+            RichText::new("WASD")
+                .strong()
+                .size(11.5)
+                .color(Color32::from_rgb(56, 189, 248)),
+        );
+        left_ui.add_space(6.0);
+        if self.emulation_active {
+            left_ui.label(
+                RichText::new("● ACTIVE")
+                    .size(9.5)
+                    .color(Color32::from_rgb(34, 197, 94))
+                    .strong(),
+            );
+        } else {
+            left_ui.label(
+                RichText::new("○ IDLE")
+                    .size(9.5)
+                    .color(Color32::from_rgb(148, 163, 184)),
+            );
+        }
+
+        // 3. LADO DIREITO: Botões de Controle (Fechar, Maximizar, Minimizar)
+        let mut right_ui = ui.new_child(
+            egui::UiBuilder::default()
+                .max_rect(titlebar_rect)
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+
+        right_ui.add_space(6.0);
+
+        // Botão Fechar (Close)
+        let close_btn = egui::Button::new(
+            RichText::new("✕")
+                .size(12.5)
+                .color(Color32::from_rgb(241, 245, 249)),
+        )
+        .min_size(vec2(40.0, 26.0))
+        .corner_radius(CornerRadius::same(5));
+
+        let close_resp = right_ui.add(close_btn);
+        if close_resp.hovered() {
+            right_ui.painter().rect_filled(
+                close_resp.rect,
+                CornerRadius::same(5),
+                Color32::from_rgb(239, 68, 68),
+            );
+            right_ui.painter().text(
+                close_resp.rect.center(),
+                Align2::CENTER_CENTER,
+                "✕",
+                FontId::proportional(12.5),
+                Color32::WHITE,
+            );
+        }
+        if close_resp.clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
+        right_ui.add_space(2.0);
+
+        // Botão Maximizar / Restaurar
+        let max_icon = if is_maximized { "🗗" } else { "□" };
+        let max_btn = egui::Button::new(
+            RichText::new(max_icon)
+                .size(12.0)
+                .color(Color32::from_rgb(203, 213, 225)),
+        )
+        .min_size(vec2(36.0, 26.0))
+        .corner_radius(CornerRadius::same(5));
+
+        if right_ui.add(max_btn).clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+        }
+
+        right_ui.add_space(2.0);
+
+        // Botão Minimizar
+        let min_btn = egui::Button::new(
+            RichText::new("─")
+                .size(12.0)
+                .color(Color32::from_rgb(203, 213, 225)),
+        )
+        .min_size(vec2(36.0, 26.0))
+        .corner_radius(CornerRadius::same(5));
+
+        if right_ui.add(min_btn).clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+
+        // Arrastar e duplo-clique no titlebar (exceto na região dos botões)
+        let buttons_width = 130.0;
+        let is_over_buttons = ctx
+            .input(|i| i.pointer.hover_pos())
+            .map(|pos| pos.x >= titlebar_rect.right() - buttons_width)
+            .unwrap_or(false);
+
+        if !is_over_buttons {
+            if titlebar_response.drag_started() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+            if titlebar_response.double_clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
+            }
+        }
+    }
+
     fn render_top_header(&mut self, ui: &mut Ui) {
         egui::Frame::new()
             .fill(Color32::from_rgb(26, 36, 52))
@@ -332,15 +492,6 @@ impl WasdApp {
             .inner_margin(Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    // Logo / Título
-                    ui.label(
-                        RichText::new("🎮 WASD Anywhere")
-                            .size(17.0)
-                            .strong()
-                            .color(Color32::from_rgb(56, 189, 248)),
-                    );
-
-                    ui.add_space(16.0);
 
                     // Perfil Selector
                     ui.label(RichText::new("Profile:").strong());
