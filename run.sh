@@ -2,13 +2,12 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-mkdir -p "$DIR/build"
-cd "$DIR/build"
+BIN="$DIR/target/release/wasd-anywhere"
 
-if [ ! -f "Makefile" ]; then
-    cmake ..
+if [ -f "$BIN" ]; then
+    exec "$BIN" "$@"
+else
+    echo "Building and starting WASD Anywhere (Rust + egui)..."
+    cd "$DIR"
+    cargo run --release -- "$@"
 fi
-
-make -j$(nproc)
-echo "Starting WASD Anywhere..."
-exec ./wasd-gui "$@"
