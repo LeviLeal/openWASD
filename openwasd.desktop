@@ -7,3 +7,4 @@ Terminal=false
 Type=Application
 Categories=Game;Utility;
 Keywords=gamepad;controller;xbox;virtual;mapper;wasd;openwasd;
+StartupWMClass=openwasd
