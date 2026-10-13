@@ -1,0 +1,5 @@
+/home/myuser/Desktop/WASD Anywhere/build/CMakeFiles/wasd-gui.dir
+/home/myuser/Desktop/WASD Anywhere/build/CMakeFiles/edit_cache.dir
+/home/myuser/Desktop/WASD Anywhere/build/CMakeFiles/rebuild_cache.dir
+/home/myuser/Desktop/WASD Anywhere/build/CMakeFiles/wasd-gui_autogen_timestamp_deps.dir
+/home/myuser/Desktop/WASD Anywhere/build/CMakeFiles/wasd-gui_autogen.dir
