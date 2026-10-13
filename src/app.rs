@@ -4,8 +4,8 @@ use crate::key_codes::{egui_key_to_evdev, evdev_to_key_name};
 use crate::keyboard_interceptor::{InputDeviceInfo, InterceptorEvent, KeyboardInterceptor};
 use crate::mapping_manager::MappingManager;
 use egui::{
-    vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, RichText, Sense,
-    Stroke, StrokeKind, Ui, Visuals, Window,
+    pos2, vec2, Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, Rect, RichText,
+    Sense, Stroke, StrokeKind, Ui, Visuals, Window,
 };
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
@@ -408,62 +408,115 @@ impl WasdApp {
 
         right_ui.add_space(6.0);
 
-        // Botão Fechar (Close)
-        let close_btn = egui::Button::new(
-            RichText::new("✕")
-                .size(12.5)
-                .color(Color32::from_rgb(241, 245, 249)),
-        )
-        .min_size(vec2(40.0, 26.0))
-        .corner_radius(CornerRadius::same(5));
+        // 1. Botão Fechar (Close) - Vector "X"
+        let (close_rect, close_resp) =
+            right_ui.allocate_exact_size(vec2(40.0, 26.0), Sense::click());
 
-        let close_resp = right_ui.add(close_btn);
-        if close_resp.hovered() {
+        let close_color = if close_resp.hovered() {
             right_ui.painter().rect_filled(
-                close_resp.rect,
+                close_rect,
                 CornerRadius::same(5),
                 Color32::from_rgb(239, 68, 68),
             );
-            right_ui.painter().text(
-                close_resp.rect.center(),
-                Align2::CENTER_CENTER,
-                "✕",
-                FontId::proportional(12.5),
-                Color32::WHITE,
-            );
-        }
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(203, 213, 225)
+        };
+
+        let c = close_rect.center();
+        let s = 4.5;
+        right_ui.painter().line_segment(
+            [pos2(c.x - s, c.y - s), pos2(c.x + s, c.y + s)],
+            Stroke::new(1.6, close_color),
+        );
+        right_ui.painter().line_segment(
+            [pos2(c.x + s, c.y - s), pos2(c.x - s, c.y + s)],
+            Stroke::new(1.6, close_color),
+        );
+
         if close_resp.clicked() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
 
         right_ui.add_space(2.0);
 
-        // Botão Maximizar / Restaurar
-        let max_icon = if is_maximized { "🗗" } else { "□" };
-        let max_btn = egui::Button::new(
-            RichText::new(max_icon)
-                .size(12.0)
-                .color(Color32::from_rgb(203, 213, 225)),
-        )
-        .min_size(vec2(36.0, 26.0))
-        .corner_radius(CornerRadius::same(5));
+        // 2. Botão Maximizar / Restaurar - Vector Box
+        let (max_rect, max_resp) =
+            right_ui.allocate_exact_size(vec2(36.0, 26.0), Sense::click());
 
-        if right_ui.add(max_btn).clicked() {
+        let max_color = if max_resp.hovered() {
+            right_ui.painter().rect_filled(
+                max_rect,
+                CornerRadius::same(5),
+                Color32::from_rgb(51, 65, 85),
+            );
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(203, 213, 225)
+        };
+
+        let c = max_rect.center();
+        if is_maximized {
+            // Ícone restaurar: dois quadrados sobrepostos
+            let back_rect = Rect::from_center_size(pos2(c.x + 2.0, c.y - 2.0), vec2(7.5, 7.5));
+            right_ui.painter().rect_stroke(
+                back_rect,
+                CornerRadius::ZERO,
+                Stroke::new(1.3, max_color),
+                StrokeKind::Inside,
+            );
+            let front_rect = Rect::from_center_size(pos2(c.x - 2.0, c.y + 2.0), vec2(7.5, 7.5));
+            right_ui.painter().rect_filled(
+                front_rect,
+                CornerRadius::ZERO,
+                Color32::from_rgb(11, 17, 33),
+            );
+            right_ui.painter().rect_stroke(
+                front_rect,
+                CornerRadius::ZERO,
+                Stroke::new(1.3, max_color),
+                StrokeKind::Inside,
+            );
+        } else {
+            // Ícone maximizar: um quadrado único limpo
+            let box_rect = Rect::from_center_size(c, vec2(10.0, 10.0));
+            right_ui.painter().rect_stroke(
+                box_rect,
+                CornerRadius::ZERO,
+                Stroke::new(1.4, max_color),
+                StrokeKind::Inside,
+            );
+        }
+
+        if max_resp.clicked() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_maximized));
         }
 
         right_ui.add_space(2.0);
 
-        // Botão Minimizar
-        let min_btn = egui::Button::new(
-            RichText::new("─")
-                .size(12.0)
-                .color(Color32::from_rgb(203, 213, 225)),
-        )
-        .min_size(vec2(36.0, 26.0))
-        .corner_radius(CornerRadius::same(5));
+        // 3. Botão Minimizar - Vector Traço Horizontal
+        let (min_rect, min_resp) =
+            right_ui.allocate_exact_size(vec2(36.0, 26.0), Sense::click());
 
-        if right_ui.add(min_btn).clicked() {
+        let min_color = if min_resp.hovered() {
+            right_ui.painter().rect_filled(
+                min_rect,
+                CornerRadius::same(5),
+                Color32::from_rgb(51, 65, 85),
+            );
+            Color32::WHITE
+        } else {
+            Color32::from_rgb(203, 213, 225)
+        };
+
+        let c = min_rect.center();
+        let w = 5.0;
+        right_ui.painter().line_segment(
+            [pos2(c.x - w, c.y), pos2(c.x + w, c.y)],
+            Stroke::new(1.6, min_color),
+        );
+
+        if min_resp.clicked() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
